@@ -1,0 +1,17 @@
+INTEGRACAO DE CONTA ROBLOX — PORTAL EB
+
+1) A página nova é conectar.html e o módulo OAuth é server/roblox-oauth.js.
+2) O backend Express existente precisa chamar o módulo:
+   require("./roblox-oauth")(app);
+   Faça isso depois de criar `app` e antes do `app.listen`.
+3) Acrescente estas variáveis ao server/.env (não compartilhe esse arquivo):
+   ROBLOX_CLIENT_ID=ID_DO_APP
+   ROBLOX_CLIENT_SECRET=SEGREDO_DO_APP
+   ROBLOX_REDIRECT_URI=https://SEU_DOMINIO/auth/roblox/callback
+   AUTH_COOKIE_SECRET=CHAVE_RANDOMICA_LONGA
+4) No registro OAuth do Roblox, cadastre exatamente a Redirect URL acima e permita os escopos `openid` e `profile`.
+5) O fluxo usa Authorization Code + PKCE; a senha Roblox não passa pelo Portal.
+6) A sessão Portal expira em 3 dias e exige reconectar. A conexão é apenas identidade; não altera grupos, patentes nem cargos.
+7) Teste somente depois que backend e site estiverem hospedados no mesmo domínio HTTPS. `localhost` é apenas teste local.
+
+Dependências: Express e Node com fetch global (Node 18+). O arquivo existente do backend deve ser mantido; este módulo adiciona as rotas OAuth.
