@@ -38,15 +38,10 @@ function validarChave(recebida, correta) {
         crypto.timingSafeEqual(a, b);
 }
 
-// STATUS
+// PAGINA INICIAL
 app.get("/", (req, res) => {
-    res.json({
-        sistema: "Portal EB",
-        integracao: "Roblox → Discord",
-        status: "Online"
-    });
+    res.sendFile(path.join(__dirname, "..", "index.html"));
 });
-
 // INICIAR LOGIN DISCORD
 app.get("/auth/discord", (req, res) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
