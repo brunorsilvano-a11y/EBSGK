@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light"><meta name="author" content="Portal EB — Projeto comunitário independente">
+<link rel="icon" type="image/svg+xml" href="favicon.svg"><meta name="theme-color" content="#101d15">
+<title>CONECTAR ROBLOX | Portal EB</title><link rel="stylesheet" href="style.css">
+</head><body>
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+<header class="topbar"><a class="brand" href="index.html"><div class="brand-mark">EB</div><div><strong>EXÉRCITO BRASILEIRO</strong><small>DISCIPLINA, HONRA E COMPROMISSO.</small></div></a>
+<button class="menu-toggle" id="menuToggle" aria-label="Abrir menu" aria-expanded="false">☰</button>
+<nav id="mainNav" aria-label="Navegação principal"><a href="index.html">Início</a><a href="institucional.html">Institucional</a><a href="hierarquia.html">Hierarquia</a><a href="promocoes.html">Promoções</a><a href="regulamento.html">Regulamento</a><a href="avisos.html">Avisos</a><a href="conectar.html" class="active">Conectar Roblox</a><a href="contato.html">Comunidade</a></nav>
+<a class="nav-button" href="https://www.roblox.com/share/g/87904266" target="_blank" rel="noopener">ACESSAR ROBLOX ↗</a></header>
+<main id="conteudo"><section class="page-hero"><span class="eyebrow">PORTAL EB • VINCULAÇÃO DE CONTA</span><h1>CONECTE SUA <em>CONTA.</em></h1><p>Autorize o Portal EB a confirmar sua identidade Roblox. Você será redirecionado ao Roblox para entrar e aprovar a conexão — sua senha não será compartilhada com o Portal.</p></section>
+<section class="content"><div class="connect-card">
+<span class="section-label">IDENTIFICAÇÃO ROBLOX</span><h2 id="connectTitle">Vincule sua conta <em>Roblox.</em></h2>
+<p id="connectText">A conexão dura até 3 dias. Depois disso, será necessário conectar novamente.</p>
+<div id="connectStatus" class="connect-status" role="status">Verificando conexão...</div>
+<div class="connect-actions"><a id="connectButton" class="button" href="/auth/roblox">Conectar com Roblox</a><button id="disconnectButton" class="button secondary" type="button" hidden>Desconectar</button></div>
+<p class="connect-note">O Portal EB solicita apenas sua identidade básica (openid/profile). Não insira sua senha Roblox nesta página.</p>
+</div></section></main>
+<footer><div class="brand-mark small">EB</div><div><strong>EXÉRCITO BRASILEIRO</strong><small>DISCIPLINA, HONRA E COMPROMISSO.</small></div><span class="footer-note">Portal comunitário independente • Roblox</span><span class="copyright">© <span id="year"></span> — Todos os direitos reservados.</span></footer>
+<script src="script.js"></script><script>
+(async()=>{
+ const status=document.getElementById('connectStatus'), btn=document.getElementById('connectButton'), logout=document.getElementById('disconnectButton');
+ try{
+  const r=await fetch('/auth/me',{credentials:'same-origin'});
+  const data=await r.json();
+  if(data.connected){
+   status.textContent='Conectado: '+data.username+' (ID '+data.userId+')';
+   btn.hidden=true; logout.hidden=false;
+   logout.addEventListener('click',async()=>{await fetch('/auth/logout',{method:'POST',credentials:'same-origin'});location.reload();});
+  }else status.textContent='Nenhuma conta Roblox conectada.';
+ }catch(e){status.textContent='Backend ainda não configurado. A conexão estará disponível após publicar o servidor.';}
+})();
+const params=new URLSearchParams(location.search);
+if(params.has('connected')) document.getElementById('connectStatus').textContent='Conta conectada com sucesso! Atualizando...';
+if(params.has('error')) document.getElementById('connectStatus').textContent='Não foi possível conectar. Tente novamente.';
+</script></body></html>
