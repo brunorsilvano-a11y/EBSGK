@@ -9,6 +9,8 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set("trust proxy", 1);
+
 app.use(express.json({ limit: "10kb" }));
 
 if (!process.env.SESSION_SECRET) {
@@ -38,22 +40,34 @@ function validarChave(recebida, correta) {
         crypto.timingSafeEqual(a, b);
 }
 
+function gerarVerifier() {
+    return crypto.randomBytes(32).toString("base64url");
+}
+
+function gerarChallenge(verifier) {
+    return crypto
+        .createHash("sha256")
+        .update(verifier)
+        .digest("base64url");
+}
+
 // PAGINA INICIAL
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "..", "index.html"));
 });
-// INICIAR LOGIN DISCORD
+
+// LOGIN DISCORD
 app.get("/auth/discord", (req, res) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const redirectUri = process.env.DISCORD_REDIRECT_URI;
 
     if (!clientId || !redirectUri) {
-        return res.status(503).send("OAuth2 não configurado.");
+        return res.status(503).send("OAuth2 do Discord não configurado.");
     }
 
     const state = crypto.randomBytes(32).toString("hex");
 
-    req.session.oauthState = state;
+    req.session.discordOAuthState = state;
 
     const parametros = new URLSearchParams({
         client_id: clientId,
@@ -63,12 +77,10 @@ app.get("/auth/discord", (req, res) => {
         state
     });
 
-    res.redirect(
-        `https://discord.com/oauth2/authorize?${parametros}`
-    );
+    res.redirect(`https://discord.com/oauth2/authorize?${parametros}`);
 });
 
-// RETORNO DO DISCORD
+// CALLBACK DISCORD
 app.get("/auth/discord/callback", async (req, res) => {
     try {
         const { code, state } = req.query;
@@ -76,13 +88,13 @@ app.get("/auth/discord/callback", async (req, res) => {
         if (
             !code ||
             !state ||
-            !req.session.oauthState ||
-            state !== req.session.oauthState
+            !req.session.discordOAuthState ||
+            state !== req.session.discordOAuthState
         ) {
-            return res.status(400).send("Autorização inválida.");
+            return res.status(400).send("Autorização Discord inválida.");
         }
 
-        delete req.session.oauthState;
+        delete req.session.discordOAuthState;
 
         const parametros = new URLSearchParams({
             client_id: process.env.DISCORD_CLIENT_ID,
@@ -102,73 +114,167 @@ app.get("/auth/discord/callback", async (req, res) => {
             }
         );
 
-        const accessToken = tokenResposta.data.access_token;
-
         const usuarioResposta = await axios.get(
             "https://discord.com/api/v10/users/@me",
             {
                 headers: {
-                    Authorization: `Bearer ${accessToken}`
+                    Authorization: `Bearer ${tokenResposta.data.access_token}`
                 }
             }
         );
 
         const usuario = usuarioResposta.data;
 
-        req.session.regenerate((erro) => {
+        req.session.discordUser = {
+            id: usuario.id,
+            username: usuario.username,
+            globalName: usuario.global_name,
+            avatar: usuario.avatar
+        };
+
+        req.session.save((erro) => {
             if (erro) {
                 console.error(erro);
-                return res.status(500).send("Erro ao criar sessão.");
+                return res.status(500).send("Erro ao salvar sessão.");
             }
 
-            req.session.discordUser = {
-                id: usuario.id,
-                username: usuario.username,
-                globalName: usuario.global_name,
-                avatar: usuario.avatar
-            };
+            res.redirect("/promocoes.html");
+        });
 
-            req.session.save((erro) => {
-                if (erro) {
-                    console.error(erro);
-                    return res.status(500).send("Erro ao salvar sessão.");
+    } catch (erro) {
+        console.error("Erro Discord:", erro.response?.data || erro.message);
+        res.status(500).send("Não foi possível realizar o login Discord.");
+    }
+});
+
+// INICIAR LOGIN ROBLOX
+app.get("/auth/roblox", (req, res) => {
+    const clientId = process.env.ROBLOX_CLIENT_ID;
+    const redirectUri = process.env.ROBLOX_REDIRECT_URI;
+
+    if (!clientId || !redirectUri) {
+        return res.status(503).send("OAuth2 do Roblox não configurado.");
+    }
+
+    const state = crypto.randomBytes(32).toString("hex");
+    const verifier = gerarVerifier();
+    const challenge = gerarChallenge(verifier);
+
+    req.session.robloxOAuthState = state;
+    req.session.robloxCodeVerifier = verifier;
+
+    const parametros = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: "openid profile",
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256"
+    });
+
+    res.redirect(
+        `https://apis.roblox.com/oauth/v1/authorize?${parametros}`
+    );
+});
+
+// RETORNO DO ROBLOX
+app.get("/auth/roblox/callback", async (req, res) => {
+    try {
+        const { code, state, error } = req.query;
+
+        if (error) {
+            return res.status(400).send("Autorização Roblox recusada.");
+        }
+
+        if (
+            !code ||
+            !state ||
+            !req.session.robloxOAuthState ||
+            state !== req.session.robloxOAuthState ||
+            !req.session.robloxCodeVerifier
+        ) {
+            return res.status(400).send("Autorização Roblox inválida.");
+        }
+
+        const verifier = req.session.robloxCodeVerifier;
+
+        delete req.session.robloxOAuthState;
+        delete req.session.robloxCodeVerifier;
+
+        const parametros = new URLSearchParams({
+            client_id: process.env.ROBLOX_CLIENT_ID,
+            client_secret: process.env.ROBLOX_CLIENT_SECRET,
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: process.env.ROBLOX_REDIRECT_URI,
+            code_verifier: verifier
+        });
+
+        const tokenResposta = await axios.post(
+            "https://apis.roblox.com/oauth/v1/token",
+            parametros,
+            {
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
                 }
+            }
+        );
 
-                console.log(
-                    `Login Discord realizado: ${usuario.username}`
-                );
+        const usuarioResposta = await axios.get(
+            "https://apis.roblox.com/oauth/v1/userinfo",
+            {
+                headers: {
+                    Authorization: `Bearer ${tokenResposta.data.access_token}`
+                }
+            }
+        );
 
-                res.redirect("/promocoes.html");
-            });
+        const usuario = usuarioResposta.data;
+
+        req.session.robloxUser = {
+            id: usuario.sub,
+            username: usuario.preferred_username,
+            displayName: usuario.name,
+            profile: usuario.profile,
+            picture: usuario.picture
+        };
+
+        req.session.save((erro) => {
+            if (erro) {
+                console.error(erro);
+                return res.status(500).send("Erro ao salvar sessão Roblox.");
+            }
+
+            console.log(
+                `Login Roblox realizado: ${usuario.preferred_username}`
+            );
+
+            res.redirect("/conectar.html");
         });
 
     } catch (erro) {
         console.error(
-            "Erro no OAuth2:",
+            "Erro Roblox:",
             erro.response?.data || erro.message
         );
 
         res.status(500).send(
-            "Não foi possível realizar o login com Discord."
+            "Não foi possível realizar o login com Roblox."
         );
     }
 });
 
 // CONSULTAR USUÁRIO CONECTADO
 app.get("/api/me", (req, res) => {
-    if (!req.session.discordUser) {
-        return res.status(401).json({
-            autenticado: false
-        });
-    }
-
     res.json({
-        autenticado: true,
-        usuario: req.session.discordUser
+        autenticado: !!req.session.discordUser,
+        usuario: req.session.discordUser || null,
+        roblox: req.session.robloxUser || null
     });
 });
 
-// SAIR DA CONTA
+// SAIR
 app.post("/auth/logout", (req, res) => {
     req.session.destroy((erro) => {
         if (erro) {
@@ -179,10 +285,7 @@ app.post("/auth/logout", (req, res) => {
 
         res.clearCookie("portaleb.sid");
 
-        res.json({
-            sucesso: true,
-            mensagem: "Sessão encerrada."
-        });
+        res.json({ sucesso: true });
     });
 });
 
@@ -191,10 +294,7 @@ app.post("/api/roblox/evento", async (req, res) => {
     try {
         const chave = req.headers["x-eb-secret"];
 
-        if (!validarChave(
-            chave,
-            process.env.ROBLOX_API_SECRET
-        )) {
+        if (!validarChave(chave, process.env.ROBLOX_API_SECRET)) {
             return res.status(401).json({
                 erro: "Acesso não autorizado."
             });
@@ -240,9 +340,7 @@ app.post("/api/roblox/evento", async (req, res) => {
                     title: entrou
                         ? "🟢 Jogador entrou no EB"
                         : "🔴 Jogador saiu do EB",
-
                     color: entrou ? 0x2ecc71 : 0xe74c3c,
-
                     fields: [
                         {
                             name: "Jogador",
@@ -255,9 +353,7 @@ app.post("/api/roblox/evento", async (req, res) => {
                             inline: true
                         }
                     ],
-
                     timestamp: new Date().toISOString(),
-
                     footer: {
                         text: "Portal EB | Sistema de integração"
                     }
@@ -283,7 +379,20 @@ app.post("/api/roblox/evento", async (req, res) => {
     }
 });
 
-// DISPONIBILIZAR ARQUIVOS DO SITE LOCALMENTE
+// PROTEGER ARQUIVOS INTERNOS DO SERVIDOR
+app.use((req, res, next) => {
+    if (
+        req.path.startsWith("/server") ||
+        req.path.startsWith("/.git") ||
+        req.path.endsWith(".env")
+    ) {
+        return res.sendStatus(404);
+    }
+
+    next();
+});
+
+// ARQUIVOS DO SITE
 app.use(express.static(path.join(__dirname, "..")));
 
 app.listen(PORT, "0.0.0.0", () => {
